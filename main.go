@@ -6,9 +6,6 @@ import (
 	"github.com/pilu/go-base62"
 	"log"
 	"net/http"
-	"reflect"
-	"strings"
-	"fmt"
 	"github.com/gorilla/mux"
 	"encoding/json"
 )
@@ -22,18 +19,6 @@ func hash(s string) string {
 	h := fnv.New32a()
 	h.Write([]byte(s))
 	return base62.Encode(int(h.Sum32()))
-}
-
-func lookupLongUrlByToken(bucket *gocb.Bucket, token string) (longUrl string, err error) {
-	var content interface{}
-	_, err = bucket.Get(token,&content)
-
-	if err != nil {
-		fmt.Printf(err.Error())
-		return "",err
-	}
-	longUrl = reflect.ValueOf(content).String()
-	return longUrl, nil
 }
 
 func CreateURLHTTPHandler(bucket *gocb.Bucket) func (w http.ResponseWriter, r *http.Request) {
@@ -67,15 +52,17 @@ func CreateURLHTTPHandler(bucket *gocb.Bucket) func (w http.ResponseWriter, r *h
 
 		if err != nil {
 
-			if gocb.ErrKeyExists != nil {
-				_,err = bucket.Get(token, longUrl)
-				json.NewEncoder(w).Encode(shortUrl)
+			if err == gocb.ErrKeyExists{
+				js:=RequestResponse{URL:shortUrl}
+				json.NewEncoder(w).Encode(js)
 				return
-
 			}
 
 			log.Fatalf("ERROR INSERTING TO BUCKET:%s", err.Error())
 		}
+
+		js:=RequestResponse{URL:shortUrl}
+		json.NewEncoder(w).Encode(js)
 
 		return
 	}
@@ -83,25 +70,22 @@ func CreateURLHTTPHandler(bucket *gocb.Bucket) func (w http.ResponseWriter, r *h
 
 func RedirectURLHTTPHandler(bucket *gocb.Bucket) func (w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
-		// есть доступ до бакета
-		if r.Method != "GET" {
-			http.Error(w, http.StatusText(405), 405)
-			return
+
+		token := string(mux.Vars(r)["token"])
+
+		var content interface{}
+		var longUrl string
+
+		bucket.Get(token,&content)
+
+		if content != nil {
+			longUrl = content.(string)
+
 		}
 
-		// Check if the url parameter has been sent along (and is not empty)
-		path := string(r.URL.Path)
+		println(longUrl)
 
-		if path == "" {
-			http.Error(w, "", http.StatusBadRequest)
-			return
-		}
-
-		token := strings.TrimPrefix(path,"/")
-
-		var longUrl,err = lookupLongUrlByToken(bucket,token)
-
-		if err == nil {
+		if longUrl != "" {
 			http.Redirect(w,r,longUrl,301)
 			return
 		}
@@ -128,8 +112,9 @@ func main(){
 	bucket.Manager("", "").CreatePrimaryIndex("", true, false)
 
 	r := mux.NewRouter()
+
 	r.HandleFunc("/create",CreateURLHTTPHandler(bucket))
-	r.HandleFunc("/go/[a-Z0-9]", RedirectURLHTTPHandler(bucket))
+	r.HandleFunc("/go/{token:[a-zA-Z0-9]+}", RedirectURLHTTPHandler(bucket))
 
 	http.Handle("/", r)
 	http.ListenAndServe(":8000", nil)
