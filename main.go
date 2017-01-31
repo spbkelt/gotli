@@ -10,45 +10,33 @@ import (
 	"strings"
 	"fmt"
 	"github.com/gorilla/mux"
+	"encoding/json"
 )
 
-// bucket reference - reuse as bucket reference in the application
-var bucket *gocb.Bucket
-
-type Url struct {
-	LongUrl string `json:"long_url"`
+type RequestResponse  struct {
+	URL string
 }
 
-
 //Need for one way convert any string to uniq integer sequence
-func hash(s string) uint32 {
+func hash(s string) string {
 	h := fnv.New32a()
 	h.Write([]byte(s))
-	return h.Sum32()
+	return base62.Encode(int(h.Sum32()))
 }
 
 func lookupLongUrlByToken(bucket *gocb.Bucket, token string) (longUrl string, err error) {
-	fragment, err := bucket.LookupIn(token).Get("long_url").Execute()
-
-	if err != nil {
-		fmt.Printf(err.Error())
-		return "",err
-	}
-
 	var content interface{}
-
-	err = fragment.Content("long_url",&content )
+	_, err = bucket.Get(token,&content)
 
 	if err != nil {
 		fmt.Printf(err.Error())
 		return "",err
 	}
-
 	longUrl = reflect.ValueOf(content).String()
 	return longUrl, nil
 }
 
-func CreateUrlHttpHandler(bucket *gocb.Bucket) func (w http.ResponseWriter, r *http.Request) {
+func CreateURLHTTPHandler(bucket *gocb.Bucket) func (w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// есть доступ до бакета
 		if r.Method != "POST" {
@@ -56,36 +44,43 @@ func CreateUrlHttpHandler(bucket *gocb.Bucket) func (w http.ResponseWriter, r *h
 			return
 		}
 
-		// Check if the url parameter has been sent along (and is not empty)
-		longUrl := r.URL.Query().Get("url")
+		var request RequestResponse
 
-		if longUrl == "" {
-			http.Error(w, "", http.StatusBadRequest)
+		if r.Body == nil {
+			http.Error(w, "Please send a request body", 400)
+			return
+		}
+		err := json.NewDecoder(r.Body).Decode(&request)
+
+		if err != nil {
+			http.Error(w, err.Error(), 400)
 			return
 		}
 
+		var longUrl = request.URL
+
 		// Check if url already exists in the database
-		var token = base62.Encode(int(hash(longUrl)))
+		var token = hash(longUrl)
 		var value interface{}
 
-		var shortUrl = "http://jetb.co/" +  token
+		var shortUrl = "http://localhost:8000/" +  token
 
-		_, err := bucket.Get(token, &value)
+		_, err = bucket.Get(token, &value)
 
 		if err != nil {
 			// The URL already doesnt exist! Upsert document with urls
+			var urls interface{}
 
-			var urls Url
 
-			urls.LongUrl = longUrl
 
-			_,err = bucket.Upsert(token, urls, 0)
+			_,err = bucket.Upsert(token, &urls, 0)
 
 			if err != nil {
 				log.Fatalf("ERROR UPSERTING TO BUCKET:%s", err.Error())
 			}
 
-			w.Write([]byte(shortUrl))
+			u := RequestResponse{URL: shortUrl}
+			json.NewEncoder(w).Encode(u)
 			return
 		}
 
@@ -93,7 +88,7 @@ func CreateUrlHttpHandler(bucket *gocb.Bucket) func (w http.ResponseWriter, r *h
 	}
 }
 
-func RedirectUrlHttpHandler(bucket *gocb.Bucket) func (w http.ResponseWriter, r *http.Request) {
+func RedirectURLHTTPHandler(bucket *gocb.Bucket) func (w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 		// есть доступ до бакета
 		if r.Method != "GET" {
@@ -135,8 +130,8 @@ func main(){
 	bucket.Manager("", "").CreatePrimaryIndex("", true, false)
 
 	r := mux.NewRouter()
-	r.HandleFunc("/create",CreateUrlHttpHandler(bucket))
-	r.HandleFunc("/go/[a-Z0-9]", RedirectUrlHttpHandler(bucket))
+	r.HandleFunc("/create",CreateURLHTTPHandler(bucket))
+	r.HandleFunc("/go/[a-Z0-9]", RedirectURLHTTPHandler(bucket))
 
 	http.Handle("/", r)
 	http.ListenAndServe(":8000", nil)
