@@ -61,27 +61,20 @@ func CreateURLHTTPHandler(bucket *gocb.Bucket) func (w http.ResponseWriter, r *h
 
 		// Check if url already exists in the database
 		var token = hash(longUrl)
-		var value interface{}
-
 		var shortUrl = "http://localhost:8000/" +  token
 
-		_, err = bucket.Get(token, &value)
+		_, err = bucket.Insert(token, &longUrl,0)
 
 		if err != nil {
-			// The URL already doesnt exist! Upsert document with urls
-			var urls interface{}
 
+			if gocb.ErrKeyExists != nil {
+				_,err = bucket.Get(token, longUrl)
+				json.NewEncoder(w).Encode(shortUrl)
+				return
 
-
-			_,err = bucket.Upsert(token, &urls, 0)
-
-			if err != nil {
-				log.Fatalf("ERROR UPSERTING TO BUCKET:%s", err.Error())
 			}
 
-			u := RequestResponse{URL: shortUrl}
-			json.NewEncoder(w).Encode(u)
-			return
+			log.Fatalf("ERROR INSERTING TO BUCKET:%s", err.Error())
 		}
 
 		return
@@ -126,7 +119,12 @@ func main(){
 		log.Fatalf("ERROR CONNECTING TO CLUSTER:%s", err)
 	}
 
-	bucket,  _ := cluster.OpenBucket("default", "")
+	bucket, err := cluster.OpenBucket("default", "")
+
+	if err != nil {
+		log.Fatalf("ERROR OPENING BUCKET:%s", err)
+	}
+
 	bucket.Manager("", "").CreatePrimaryIndex("", true, false)
 
 	r := mux.NewRouter()
