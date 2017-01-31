@@ -9,8 +9,7 @@ import (
 	"reflect"
 	"strings"
 	"fmt"
-	"errors"
-
+	"github.com/gorilla/mux"
 )
 
 // bucket reference - reuse as bucket reference in the application
@@ -20,82 +19,12 @@ type Url struct {
 	LongUrl string `json:"long_url"`
 }
 
-type AppContext struct {
-	bucket        *gocb.Bucket
 
-}
-
-type AppHandler struct {
-	*AppContext
-	H func(*AppContext, http.ResponseWriter, *http.Request) (int, error)
-}
-
-func (ah AppHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	// Updated to pass ah.appContext as a parameter to our handler type.
-	status, err := ah.H(ah.AppContext, w, r)
-	if err != nil {
-		log.Printf("HTTP %d: %q", status, err)
-		switch status {
-		case http.StatusNotFound:
-			http.NotFound(w, r)
-		// And if we wanted a friendlier error page, we can
-		// now leverage our context instance - e.g.
-		// err := ah.renderTemplate(w, "http_404.tmpl", nil)
-		case http.StatusInternalServerError:
-			http.Error(w, http.StatusText(status), status)
-		default:
-			http.Error(w, http.StatusText(status), status)
-		}
-	}
-}
-
-//Need for convert any string to uniq integer sequence
+//Need for one way convert any string to uniq integer sequence
 func hash(s string) uint32 {
 	h := fnv.New32a()
 	h.Write([]byte(s))
 	return h.Sum32()
-}
-
-// Shortens a given URL passed through in the request.
-// If the URL has already been shortened, returns the existing URL.
-// Writes the short URL in plain text to w.
-
-func ShortenHandler(w http.ResponseWriter, r *http.Request) {
-	// Check if the url parameter has been sent along (and is not empty)
-	longUrl := r.URL.Query().Get("url")
-
-	if longUrl == "" {
-		http.Error(w, "", http.StatusBadRequest)
-		return
-	}
-
-	// Check if url already exists in the database
-	var token = base62.Encode(int(hash(longUrl)))
-	var value interface{}
-
-	var shortUrl = "http://jetb.co/" +  token
-
-	_, err := bucket.Get(token, &value)
-
-	if err != nil {
-		// The URL already doesnt exist! Upsert document with urls
-
-		var urls Url
-
-		urls.LongUrl = longUrl
-
-		_,err = bucket.Upsert(token, urls, 0)
-
-		if err != nil {
-			log.Fatalf("ERROR UPSERTING TO BUCKET:%s", err.Error())
-		}
-
-		w.Write([]byte(shortUrl))
-		return
-	}
-
-	return
-
 }
 
 func lookupLongUrlByToken(bucket *gocb.Bucket, token string) (longUrl string, err error) {
@@ -119,26 +48,78 @@ func lookupLongUrlByToken(bucket *gocb.Bucket, token string) (longUrl string, er
 	return longUrl, nil
 }
 
-func RedirectHandler(a *AppContext, w http.ResponseWriter, r *http.Request) (int,error){
-	// Check if the url parameter has been sent along (and is not empty)
-	path := string(r.URL.Path)
+func CreateUrlHttpHandler(bucket *gocb.Bucket) func (w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// есть доступ до бакета
+		if r.Method != "POST" {
+			http.Error(w, http.StatusText(405), 405)
+			return
+		}
 
-	if path == "" {
-		http.Error(w, "", http.StatusBadRequest)
-		return 400, errors.New("no token found")
+		// Check if the url parameter has been sent along (and is not empty)
+		longUrl := r.URL.Query().Get("url")
+
+		if longUrl == "" {
+			http.Error(w, "", http.StatusBadRequest)
+			return
+		}
+
+		// Check if url already exists in the database
+		var token = base62.Encode(int(hash(longUrl)))
+		var value interface{}
+
+		var shortUrl = "http://jetb.co/" +  token
+
+		_, err := bucket.Get(token, &value)
+
+		if err != nil {
+			// The URL already doesnt exist! Upsert document with urls
+
+			var urls Url
+
+			urls.LongUrl = longUrl
+
+			_,err = bucket.Upsert(token, urls, 0)
+
+			if err != nil {
+				log.Fatalf("ERROR UPSERTING TO BUCKET:%s", err.Error())
+			}
+
+			w.Write([]byte(shortUrl))
+			return
+		}
+
+		return
 	}
+}
 
-	token := strings.TrimPrefix(path,"/")
+func RedirectUrlHttpHandler(bucket *gocb.Bucket) func (w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		// есть доступ до бакета
+		if r.Method != "GET" {
+			http.Error(w, http.StatusText(405), 405)
+			return
+		}
 
-	var longUrl,err = lookupLongUrlByToken(c.bucket,token)
+		// Check if the url parameter has been sent along (and is not empty)
+		path := string(r.URL.Path)
 
-	if err == nil {
-		http.Redirect(w,r,longUrl,301)
-		return 301,nil
+		if path == "" {
+			http.Error(w, "", http.StatusBadRequest)
+			return
+		}
+
+		token := strings.TrimPrefix(path,"/")
+
+		var longUrl,err = lookupLongUrlByToken(bucket,token)
+
+		if err == nil {
+			http.Redirect(w,r,longUrl,301)
+			return
+		}
+
+		return
 	}
-
-	return 500,err
-
 }
 
 func main(){
@@ -153,10 +134,11 @@ func main(){
 	bucket,  _ := cluster.OpenBucket("default", "")
 	bucket.Manager("", "").CreatePrimaryIndex("", true, false)
 
-	context := &AppContext{bucket: bucket}
+	r := mux.NewRouter()
+	r.HandleFunc("/create",CreateUrlHttpHandler(bucket))
+	r.HandleFunc("/go/[a-Z0-9]", RedirectUrlHttpHandler(bucket))
 
-	http.HandleFunc("/create",ShortenHandler)
-	http.HandleFunc("/", AppHandler{context, RedirectHandler}))
+	http.Handle("/", r)
 	http.ListenAndServe(":8000", nil)
 
 
