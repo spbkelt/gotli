@@ -8,8 +8,7 @@ import (
 	"net/http"
 	"github.com/gorilla/mux"
 	"encoding/json"
-	"html/template"
-
+	"fmt"
 )
 
 type RequestResponse  struct {
@@ -39,7 +38,7 @@ func CreateURLHTTPHandler(bucket *gocb.Bucket) func (w http.ResponseWriter, r *h
 		err := json.NewDecoder(r.Body).Decode(&request)
 
 		if err != nil {
-			http.Error(w, err.Error(), 400)
+			http.Error(w, "Test error", 400)
 			return
 		}
 
@@ -95,20 +94,7 @@ func RedirectURLHTTPHandler(bucket *gocb.Bucket) func (w http.ResponseWriter, r 
 
 func serveHTMLTemplateHandler() func (w http.ResponseWriter, r *http.Request){
 	return func (w http.ResponseWriter, r *http.Request) {
-		t, err := template.New("index").ParseFiles("templates/index.html")
-
-		if err != nil {
-			log.Fatal(err)
-		}
-
-		var data interface{}
-
-		err = t.Execute(w, data)
-
-		if err != nil {
-			log.Fatal(err)
-		}
-		return
+		http.ServeFile(w,r,"static/index.html")
 	}
 }
 
@@ -133,7 +119,7 @@ func main(){
 
 	r.HandleFunc("/create",CreateURLHTTPHandler(bucket))
 	r.HandleFunc("/{token:[a-zA-Z0-9]+}", RedirectURLHTTPHandler(bucket))
-	r.HandleFunc("/", serveHTMLTemplateHandler())
+	r.HandleFunc("/", serveHTMLTemplateHandler() )
 
 	http.Handle("/", r)
 	panic(http.ListenAndServe(":8000", nil))

@@ -10,25 +10,28 @@
 
 <script>
     $(document).ready(function(){
+
         // click on button submit
-        $("#submit").on('click', function(){
+        $("#submit").on('click', function() {
             // send ajax
-            $.ajax({
-                url: '/create', // url where to submit the request
-                type : "POST", // type of action POST || GET
-                dataType : 'json', // data type
-                data : $("#url").serialize(), // post data || get data
-                success : function(result) {
-                    // you can see the result from the console
-                    // tab of the developer tools
-                    console.log(result);
-                },
-                error: function(xhr, resp, text) {
-                    console.log(xhr, resp, text);
-                }
+            var formData = JSON.stringify({URL: $('#url').val()});
+
+            var request = $.ajax({
+                url: ' /create',
+                type: "POST",
+                dataType: "json",
+                data: formData,
+                contentType: "application/json"
             })
-        });
-    });
+
+            request.done(function (data) {
+             //   $('.form-group').hide();
+                $("#result").html(data.URL)
+            });
+            request.fail(function (jqXHR, textStatus) {
+                console.log(result, textStatus);
+            });
+        })})
 
 </script>
 <nav class="navbar navbar-inverse navbar-fixed-top">
@@ -55,14 +58,17 @@
                 <h4>Enter URL to shorten.</h4>
 
                 <div class="form-group">
-                    <input type="text" id="url" name="url" class="form-control input-lg chat-input" placeholder="URL" />
-                    <button id="submit" type="submit" class="btn btn-lg btn-info">Submit</button>
+                        <input type="text" id="url" name="URL" class="form-control input-lg chat-input" placeholder="URL" />
+                        <button id="submit" type="submit" class="btn btn-lg btn-info">Submit</button>
                 </div>
+
+                <div id="result"></div>
 
             </div>
         </div>
 
     </div>
 </div>
+
 </body>
 </html>
