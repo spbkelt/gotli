@@ -8,6 +8,8 @@ import (
 	"net/http"
 	"github.com/gorilla/mux"
 	"encoding/json"
+	"html/template"
+
 )
 
 type RequestResponse  struct {
@@ -29,12 +31,11 @@ func CreateURLHTTPHandler(bucket *gocb.Bucket) func (w http.ResponseWriter, r *h
 			return
 		}
 
-		var request RequestResponse
-
 		if r.Body == nil {
 			http.Error(w, "Please send a request body", 400)
 			return
 		}
+		var request RequestResponse
 		err := json.NewDecoder(r.Body).Decode(&request)
 
 		if err != nil {
@@ -71,7 +72,7 @@ func CreateURLHTTPHandler(bucket *gocb.Bucket) func (w http.ResponseWriter, r *h
 func RedirectURLHTTPHandler(bucket *gocb.Bucket) func (w http.ResponseWriter, r *http.Request) {
 	return func(w http.ResponseWriter, r *http.Request) {
 
-		token := string(mux.Vars(r)["token"])
+		token := mux.Vars(r)["token"]
 
 		var content interface{}
 		var longUrl string
@@ -83,13 +84,30 @@ func RedirectURLHTTPHandler(bucket *gocb.Bucket) func (w http.ResponseWriter, r 
 
 		}
 
-		println(longUrl)
-
 		if longUrl != "" {
 			http.Redirect(w,r,longUrl,301)
 			return
 		}
 
+		return
+	}
+}
+
+func serveHTMLTemplateHandler() func (w http.ResponseWriter, r *http.Request){
+	return func (w http.ResponseWriter, r *http.Request) {
+		t, err := template.New("index").ParseFiles("templates/index.html")
+
+		if err != nil {
+			log.Fatal(err)
+		}
+
+		var data interface{}
+
+		err = t.Execute(w, data)
+
+		if err != nil {
+			log.Fatal(err)
+		}
 		return
 	}
 }
@@ -114,10 +132,11 @@ func main(){
 	r := mux.NewRouter()
 
 	r.HandleFunc("/create",CreateURLHTTPHandler(bucket))
-	r.HandleFunc("/go/{token:[a-zA-Z0-9]+}", RedirectURLHTTPHandler(bucket))
+	r.HandleFunc("/{token:[a-zA-Z0-9]+}", RedirectURLHTTPHandler(bucket))
+	r.HandleFunc("/", serveHTMLTemplateHandler())
 
 	http.Handle("/", r)
-	http.ListenAndServe(":8000", nil)
+	panic(http.ListenAndServe(":8000", nil))
 
 
 }
