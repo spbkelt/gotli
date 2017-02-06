@@ -38,7 +38,7 @@ func CreateURLHTTPHandler(bucket *gocb.Bucket) func (w http.ResponseWriter, r *h
 		err := json.NewDecoder(r.Body).Decode(&request)
 
 		if err != nil {
-			http.Error(w, "Test error", 400)
+			http.Error(w, "Malformed user's request", 400)
 			return
 		}
 
@@ -51,15 +51,9 @@ func CreateURLHTTPHandler(bucket *gocb.Bucket) func (w http.ResponseWriter, r *h
 
 		_, err = bucket.Insert(token, &longUrl,0)
 
-		if err != nil {
-
-			if err == gocb.ErrKeyExists{
-				js:=RequestResponse{URL:shortUrl}
-				json.NewEncoder(w).Encode(js)
-				return
-			}
-
-			log.Fatalf("ERROR INSERTING TO BUCKET:%s", err.Error())
+		if err != nil && err != gocb.ErrKeyExists {
+			http.Error(w, "Service is temporarily unavailable", 503)
+			return
 		}
 
 		js:=RequestResponse{URL:shortUrl}
@@ -78,6 +72,11 @@ func RedirectURLHTTPHandler(bucket *gocb.Bucket) func (w http.ResponseWriter, r 
 		var longUrl string
 
 		bucket.Get(token,&content)
+
+		if token == "" || gocb.ErrKeyNotFound != nil{
+			http.Error(w, "Invalid url provided", 400)
+			return
+		}
 
 		if content != nil {
 			longUrl = content.(string)
