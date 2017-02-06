@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"github.com/gorilla/mux"
 	"encoding/json"
-	"fmt"
+	"os"
 )
 
 type RequestResponse  struct {
@@ -46,7 +46,8 @@ func CreateURLHTTPHandler(bucket *gocb.Bucket) func (w http.ResponseWriter, r *h
 
 		// Check if url already exists in the database
 		var token = hash(longUrl)
-		var shortUrl = "http://localhost:8000/" +  token
+		//var shortUrl = "http://localhost:8000/" +  token
+		var shortUrl = "http://jetb.co/" +  token
 
 		_, err = bucket.Insert(token, &longUrl,0)
 
@@ -100,8 +101,14 @@ func serveHTMLTemplateHandler() func (w http.ResponseWriter, r *http.Request){
 
 func main(){
 
+	couchAddress := os.Getenv("COUCHBASE_ADDRESS")
+
+	if couchAddress  == "" {
+		couchAddress  = "127.0.0.1"
+	}
+
 	// Connect to Cluster
-	cluster, err := gocb.Connect("couchbase://127.0.0.1")
+	cluster, err := gocb.Connect("couchbase://" + couchAddress)
 
 	if err != nil {
 		log.Fatalf("ERROR CONNECTING TO CLUSTER:%s", err)
@@ -122,7 +129,8 @@ func main(){
 	r.HandleFunc("/", serveHTMLTemplateHandler() )
 
 	http.Handle("/", r)
-	panic(http.ListenAndServe(":8000", nil))
+
+	panic(http.ListenAndServe(":8000",  nil))
 
 
 }
