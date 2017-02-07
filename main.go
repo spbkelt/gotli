@@ -100,14 +100,15 @@ func serveHTMLTemplateHandler() func (w http.ResponseWriter, r *http.Request){
 
 func main(){
 
-	couchAddress := os.Getenv("COUCHBASE_ADDRESS")
+	couchAddress := os.Getenv("COUCHBASE_SERVICE_HOST")
+	couchPort := os.Getenv ( "COUCHBASE_SERVICE_PORT")
 
-	if couchAddress  == "" {
+	if couchAddress  == ""  {
 		couchAddress  = "127.0.0.1"
 	}
 
 	// Connect to Cluster
-	cluster, err := gocb.Connect("couchbase://" + couchAddress)
+	cluster, err := gocb.Connect("couchbase://" + couchAddress + ":" + couchPort)
 
 	if err != nil {
 		log.Fatalf("ERROR CONNECTING TO CLUSTER:%s", err)
