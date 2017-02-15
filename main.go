@@ -8,12 +8,13 @@ import (
 	"net/http"
 	"github.com/gorilla/mux"
 	"encoding/json"
-	"os"
 )
 
 type RequestResponse  struct {
 	URL string
 }
+
+const listenerPort = "8000"
 
 //Need for one way convert any string to uniq integer sequence
 func hash(s string) string {
@@ -51,8 +52,8 @@ func CreateURLHTTPHandler(bucket *gocb.Bucket) func (w http.ResponseWriter, r *h
 
 		_, err = bucket.Insert(token, &longUrl,0)
 
-		if err != nil && err != gocb.ErrKeyExists {
-			http.Error(w, "Service is temporarily unavailable", 503)
+		if err != nil && gocb.ErrKeyExists != nil{
+			http.Error(w, "Service is temporarily unavailable:" + err.Error(), 503)
 			return
 		}
 
@@ -68,15 +69,25 @@ func RedirectURLHTTPHandler(bucket *gocb.Bucket) func (w http.ResponseWriter, r 
 
 		token := mux.Vars(r)["token"]
 
+		if token == "" {
+			http.Error(w, "Invalid token provided", 400)
+		}
+
 		var content interface{}
 		var longUrl string
 
-		bucket.Get(token,&content)
+		_, err := bucket.Get(token,&content)
 
-		if token == "" || gocb.ErrKeyNotFound != nil{
-			http.Error(w, "Invalid url provided", 400)
+		if err == gocb.ErrKeyNotFound {
+			http.Error(w, "Missing token key in database: " + token, 400)
 			return
 		}
+
+		if err != nil && err != gocb.ErrKeyNotFound{
+			http.Error(w, "Internal server error:" + err.Error(), 503)
+			return
+		}
+
 
 		if content != nil {
 			longUrl = content.(string)
@@ -100,27 +111,34 @@ func serveHTMLTemplateHandler() func (w http.ResponseWriter, r *http.Request){
 
 func main(){
 
-	couchAddress := os.Getenv("COUCHBASE_SERVICE_HOST")
-	couchPort := os.Getenv ( "COUCHBASE_SERVICE_PORT")
-
-	if couchAddress  == ""  {
-		couchAddress  = "127.0.0.1"
-	}
-
+	log.Printf("Starting program...")
+	couchAddress := "couchbase.default.svc.cluster.local"
+	//couchAddress := "a56e28553f30511e6a7ea029336298d7-1093911673.eu-central-1.elb.amazonaws.com"
 	// Connect to Cluster
-	cluster, err := gocb.Connect("couchbase://" + couchAddress + ":" + couchPort)
+	cluster, err := gocb.Connect("couchbase://" + couchAddress)
 
 	if err != nil {
-		log.Fatalf("ERROR CONNECTING TO CLUSTER:%s", err)
+		log.Fatalf("ERROR CONNECTING TO CLUSTER:%s", err.Error())
+
 	}
 
-	bucket, err := cluster.OpenBucket("default", "")
+	log.Printf("Connected to cluster service endpoint:" + couchAddress)
+
+	bucket, err := cluster.OpenBucket("default","")
 
 	if err != nil {
-		log.Fatalf("ERROR OPENING BUCKET:%s", err)
+		log.Fatalf("ERROR OPENING BUCKET:%s", err.Error())
 	}
 
-	bucket.Manager("", "").CreatePrimaryIndex("", true, false)
+	log.Printf("Opened bucket default")
+
+	//err = bucket.Manager("", "").CreatePrimaryIndex("", true, false)
+
+	log.Printf("Created primary index in bucket default")
+
+	if err != nil {
+		log.Fatalf("ERROR CREATING PRIMARY INDEX:%s", err.Error())
+	}
 
 	r := mux.NewRouter()
 
@@ -130,7 +148,9 @@ func main(){
 
 	http.Handle("/", r)
 
-	panic(http.ListenAndServe(":8000",  nil))
+	panic(http.ListenAndServe(":"+listenerPort,  nil))
+
+	log.Printf("Started listener on:" + listenerPort)
 
 
 }
