@@ -69,10 +69,6 @@ func RedirectURLHTTPHandler(bucket *gocb.Bucket) func (w http.ResponseWriter, r 
 
 		token := mux.Vars(r)["token"]
 
-		if token == "" {
-			http.Error(w, "Invalid token provided", 400)
-		}
-
 		var content interface{}
 		var longUrl string
 
@@ -132,13 +128,13 @@ func main(){
 
 	log.Printf("Opened bucket default")
 
-	//err = bucket.Manager("", "").CreatePrimaryIndex("", true, false)
-
-	log.Printf("Created primary index in bucket default")
+	err = bucket.Manager("", "").CreatePrimaryIndex("", true, false)
 
 	if err != nil {
 		log.Fatalf("ERROR CREATING PRIMARY INDEX:%s", err.Error())
 	}
+
+	log.Printf("Created primary index in bucket default")
 
 	r := mux.NewRouter()
 
