@@ -48,7 +48,7 @@ func CreateURLHTTPHandler(bucket *gocb.Bucket) func (w http.ResponseWriter, r *h
 		// Check if url already exists in the database
 		var token = hash(longUrl)
 		//var shortUrl = "http://localhost:8000/" +  token
-		var shortUrl = "http://jetb.co/" +  token
+		var shortUrl = "https://jetb.co/" +  token
 
 		_, err = bucket.Insert(token, &longUrl,0)
 
